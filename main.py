@@ -3,6 +3,8 @@ import json
 from datetime import datetime
 import logging
 import os
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 
 # Configuration du logging
 logging.basicConfig(
@@ -39,6 +41,10 @@ COMMUNICATION_TEMPLATES = {
 # Création de l'application Flask
 app = Flask(__name__)
 
+# Configuration de l'API Google Chat
+SCOPES = ['https://www.googleapis.com/auth/chat.bot']
+SERVICE_ACCOUNT_FILE = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'service-account.json')
+
 def get_timestamp():
     """Retourne un timestamp formaté"""
     return datetime.now().strftime("%d/%m/%Y à %H:%M")
@@ -55,8 +61,11 @@ def format_message(template, **kwargs):
     return template.format(**default_vars)
 
 def create_chat_response(text, thread_key=None, add_copy_option=True):
-    """Crée une réponse formatée pour Google Chat avec option de copie"""
+    """Crée une réponse formatée pour Google Chat avec options de copie et publication"""
     if add_copy_option:
+        # Récupérer l'identifiant du salon à partir du thread_key
+        space = thread_key.split('/threads/')[0] if thread_key else None
+        
         response = {
             "cardsV2": [{
                 "cardId": "message_card",
@@ -90,6 +99,24 @@ def create_chat_response(text, thread_key=None, add_copy_option=True):
                                                             {
                                                                 "key": "text",
                                                                 "value": text
+                                                            }
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "text": "📢 Publier le message",
+                                                "onClick": {
+                                                    "action": {
+                                                        "function": "publish_message",
+                                                        "parameters": [
+                                                            {
+                                                                "key": "text",
+                                                                "value": text
+                                                            },
+                                                            {
+                                                                "key": "space",
+                                                                "value": space
                                                             }
                                                         ]
                                                     }
@@ -164,6 +191,17 @@ def handle_mep_command(message_text, thread_name):
             thread_name
         )
 
+def get_chat_service():
+    """Initialise le service Google Chat"""
+    try:
+        credentials = service_account.Credentials.from_service_account_file(
+            SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('chat', 'v1', credentials=credentials)
+        return service
+    except Exception as e:
+        logger.error(f"Erreur lors de l'initialisation du service Chat: {str(e)}")
+        return None
+
 @app.route('/', methods=['POST'])
 def handle_chat_event():
     """Gestionnaire principal pour les événements Google Chat"""
@@ -223,6 +261,51 @@ def copy_to_clipboard():
         
     except Exception as e:
         logger.error(f"Erreur lors de la copie: {str(e)}")
+        error_response = create_chat_response(f"❌ Erreur: {str(e)}", None, False)
+        return make_response(jsonify(error_response), 200)
+
+@app.route('/publish', methods=['POST'])
+def publish_message():
+    """Publie le message dans le salon"""
+    try:
+        data = request.get_json()
+        text = data.get('text')
+        space = data.get('space')  # L'identifiant du salon où publier
+        
+        if not text:
+            response = create_chat_response("❌ Erreur: Texte manquant", None, False)
+            return make_response(jsonify(response), 200)
+            
+        if not space:
+            response = create_chat_response("❌ Erreur: Identifiant du salon manquant", None, False)
+            return make_response(jsonify(response), 200)
+        
+        # Initialiser le service Google Chat
+        chat_service = get_chat_service()
+        if not chat_service:
+            response = create_chat_response("❌ Erreur: Impossible de se connecter à l'API Google Chat", None, False)
+            return make_response(jsonify(response), 200)
+        
+        try:
+            # Créer le message à publier
+            message = {'text': text}
+            
+            # Publier le message dans le salon
+            result = chat_service.spaces().messages().create(
+                parent=space,
+                body=message
+            ).execute()
+            
+            response = create_chat_response("✅ Message publié avec succès !", None, False)
+            return make_response(jsonify(response), 200)
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de la publication du message: {str(e)}")
+            response = create_chat_response(f"❌ Erreur lors de la publication: {str(e)}", None, False)
+            return make_response(jsonify(response), 200)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la publication: {str(e)}")
         error_response = create_chat_response(f"❌ Erreur: {str(e)}", None, False)
         return make_response(jsonify(error_response), 200)
 
