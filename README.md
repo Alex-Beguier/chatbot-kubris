@@ -4,7 +4,7 @@ Ce chatbot permet de générer automatiquement des communications standardisées
 
 ## Fonctionnalités
 
-### Commandes Incidents
+### Commandes Incidentsa
 - `/incident detection` - Génère un message d'incident détecté
 - `/incident investigation` - Génère une mise à jour d'investigation
 - `/incident resolution` - Génère un message de résolution d'incident
