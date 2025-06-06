@@ -9,7 +9,7 @@ from googleapiclient.discovery import build
 app = Flask(__name__)
 
 # --- Configuration ---
-SHEET_ID = os.environ.get("588026607")
+SHEET_ID = os.environ.get("SHEET_ID")
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 # Nom exact de l'onglet de votre planning
 SHEET_NAME = 'Equipe_KUBRIS 2025'
