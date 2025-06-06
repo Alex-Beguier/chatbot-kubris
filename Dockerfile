@@ -15,4 +15,5 @@ COPY . .
 
 # Définir la commande pour lancer l'application avec Gunicorn (serveur de production)
 # Cloud Run injecte automatiquement la variable d'environnement PORT
-CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "main:app"]
+# La syntaxe sans crochets (shell form) est utilisée pour que $PORT soit bien interprété
+CMD gunicorn --bind 0.0.0.0:$PORT main:app
