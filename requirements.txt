@@ -1,7 +1,4 @@
-# Fichier : requirements.txt
-# -----------------------------------------------------------------------------
-# Liste des librairies Python nécessaires à notre application.
+Flask==2.3.3
+gunicorn==21.2.0
+requests==2.31.0
 
-Flask==2.2.3
-gunicorn==20.1.0
-Werkzeug<3.0
