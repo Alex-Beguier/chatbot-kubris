@@ -2,8 +2,6 @@ from flask import Flask, request, jsonify
 import json
 from datetime import datetime
 import logging
-from google.auth import default
-from google.auth.transport.requests import AuthorizedSession
 import os
 
 # Configuration du logging
@@ -16,71 +14,10 @@ logger = logging.getLogger(__name__)
 def create_app():
     """Fonction de création de l'application Flask"""
     app = Flask(__name__)
-    
-    # Configuration des salons Google Chat
-    # Format des IDs :
-    # - Dans l'URL du salon : https://chat.google.com/room/AAAAxxxxxx
-    # - ID à utiliser : room/AAAAxxxxxx
-    app.config['AVAILABLE_SPACES'] = {
-        "prod": "AAAAOA17Cos",      # ID du salon de production
-        "urgent": "AAAAOA17Cos"     # ID du salon pour les urgences
-    }
-    
-    def get_google_chat_session():
-        """Crée une session authentifiée pour l'API Google Chat en utilisant les credentials Cloud Run"""
-        try:
-            credentials, project = default()
-            credentials.refresh_token = None
-            return AuthorizedSession(credentials)
-        except Exception as e:
-            logger.error(f"Erreur d'authentification Google: {str(e)}")
-            return None
 
-    def send_message_to_space(space_id, message):
-        """Envoie un message dans un salon Google Chat spécifique"""
-        try:
-            session = get_google_chat_session()
-            if not session:
-                raise Exception("Impossible d'établir une session authentifiée avec Google Chat")
-
-            # Construction de l'URL complète
-            base_url = "https://chat.googleapis.com/v1"
-            # Si space_id commence déjà par 'room/', on l'utilise tel quel
-            if not space_id.startswith('room/'):
-                space_id = f"room/{space_id}"
-            
-            url = f"{base_url}/{space_id}/messages"
-            
-            logger.info(f"Envoi du message vers le salon: {space_id}")
-            logger.info(f"URL de l'API: {url}")
-            
-            # Structure du message selon la documentation Google Chat
-            payload = {
-                "text": message
-            }
-            
-            logger.info(f"Payload: {json.dumps(payload, indent=2)}")
-            
-            headers = {
-                'Content-Type': 'application/json',
-            }
-            
-            response = session.post(url, json=payload, headers=headers)
-            
-            logger.info(f"Statut de la réponse: {response.status_code}")
-            logger.info(f"Réponse: {response.text}")
-            
-            if response.status_code != 200:
-                raise Exception(f"Erreur lors de l'envoi du message: {response.text}")
-            
-            return response.json()
-        except Exception as e:
-            logger.error(f"Erreur dans send_message_to_space: {str(e)}")
-            raise
-
-    def create_chat_response(text, thread_key=None, add_publish_option=True):
-        """Crée une réponse formatée pour Google Chat avec option de republication"""
-        if add_publish_option:
+    def create_chat_response(text, thread_key=None, add_copy_option=True):
+        """Crée une réponse formatée pour Google Chat avec option de copie"""
+        if add_copy_option:
             response = {
                 "cardsV2": [{
                     "cardId": "message_card",
@@ -106,35 +43,13 @@ def create_app():
                                         "buttonList": {
                                             "buttons": [
                                                 {
-                                                    "text": "Publier en Production",
+                                                    "text": "📋 Copier le message",
                                                     "onClick": {
                                                         "action": {
-                                                            "function": "publish_message",
+                                                            "function": "copy_to_clipboard",
                                                             "parameters": [
                                                                 {
-                                                                    "key": "target_space",
-                                                                    "value": "prod"
-                                                                },
-                                                                {
-                                                                    "key": "message",
-                                                                    "value": text
-                                                                }
-                                                            ]
-                                                        }
-                                                    }
-                                                },
-                                                {
-                                                    "text": "Publier en Urgent",
-                                                    "onClick": {
-                                                        "action": {
-                                                            "function": "publish_message",
-                                                            "parameters": [
-                                                                {
-                                                                    "key": "target_space",
-                                                                    "value": "urgent"
-                                                                },
-                                                                {
-                                                                    "key": "message",
+                                                                    "key": "text",
                                                                     "value": text
                                                                 }
                                                             ]
@@ -191,36 +106,23 @@ def create_app():
             logger.error(f"Erreur dans handle_chat_event: {str(e)}")
             return jsonify({"text": f"❌ Erreur: {str(e)}"})
 
-    @app.route('/publish', methods=['POST'])
-    def publish_message():
-        """Gère la republication d'un message dans un autre salon"""
+    @app.route('/copy', methods=['POST'])
+    def copy_to_clipboard():
+        """Retourne le texte à copier"""
         try:
             data = request.get_json()
-            target_space = data.get('target_space')
-            message = data.get('message')
+            text = data.get('text')
             
-            logger.info(f"Tentative de publication dans l'espace: {target_space}")
-            logger.info(f"Message à publier: {message}")
-            
-            if not target_space or not message:
-                return jsonify({"text": "❌ Erreur: Paramètres manquants"})
-            
-            space_id = app.config['AVAILABLE_SPACES'].get(target_space)
-            if not space_id:
-                return jsonify({"text": "❌ Erreur: Salon non reconnu"})
-            
-            logger.info(f"ID du salon cible: {space_id}")
-            
-            # Envoi du message dans le salon cible
-            result = send_message_to_space(space_id, message)
+            if not text:
+                return jsonify({"text": "❌ Erreur: Texte manquant"})
             
             return jsonify({
-                "text": f"✅ Message publié avec succès dans le salon {target_space}"
+                "text": "✅ Message copié ! Vous pouvez maintenant le coller dans le salon de votre choix."
             })
             
         except Exception as e:
-            logger.error(f"Erreur lors de la publication: {str(e)}")
-            return jsonify({"text": f"❌ Erreur lors de la publication: {str(e)}"})
+            logger.error(f"Erreur lors de la copie: {str(e)}")
+            return jsonify({"text": f"❌ Erreur: {str(e)}"})
 
     @app.route('/health', methods=['GET'])
     def health_check():
