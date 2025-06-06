@@ -14,10 +14,8 @@ RUN pip install -r requirements.txt
 # 5. Copier le reste du code de l'application dans le répertoire de travail.
 COPY . .
 
-# 6. Exposer le port que Gunicorn utilisera.
-EXPOSE 8080
-
-# 7. Définir la commande pour lancer notre application avec le serveur Gunicorn.
+# 6. Définir la commande pour lancer notre application avec le serveur Gunicorn.
 # C'est la commande que Cloud Run exécutera au démarrage du conteneur.
-# On utilise maintenant 1 seul worker pour plus de stabilité sur les petites instances.
-CMD ["gunicorn", "--workers", "1", "--bind", "0.0.0.0:8080", "main:app"]
+# On utilise la variable $PORT fournie par Cloud Run au lieu d'un port en dur.
+# La forme "exec" est utilisée pour que Gunicorn soit le processus principal (PID 1).
+CMD exec gunicorn --workers 1 --bind 0.0.0.0:$PORT main:app
