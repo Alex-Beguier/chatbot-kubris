@@ -132,8 +132,12 @@ def create_card_response(title, text):
                                                 "text": "📋 Copier le message",
                                                 "onClick": {
                                                     "action": {
-                                                        "function": "copy_to_clipboard",
+                                                        "function": "client_side_action",
                                                         "parameters": [
+                                                            {
+                                                                "key": "type",
+                                                                "value": "COPY_TO_CLIPBOARD"
+                                                            },
                                                             {
                                                                 "key": "text",
                                                                 "value": text
@@ -162,22 +166,6 @@ def handle_chat_webhook(request):
     data = request.get_json()
     if not data:
         return 'Requête invalide', 400
-
-    # Si c'est une action de copie
-    if data.get('type') == 'MESSAGE_ACTION' and data.get('actionMethodName') == 'copy_to_clipboard':
-        try:
-            text = next(
-                param['value'] 
-                for param in data.get('action', {}).get('parameters', [])
-                if param['key'] == 'text'
-            )
-            return jsonify({
-                "text": "✅ Message copié ! Vous pouvez maintenant le coller dans un autre salon."
-            })
-        except (KeyError, StopIteration):
-            return jsonify({
-                "text": "❌ Erreur: Impossible de copier le message."
-            })
 
     message = data.get('message', {})
     text = message.get('text', '').lower().strip()
