@@ -17,10 +17,13 @@ def create_app():
     """Fonction de création de l'application Flask"""
     app = Flask(__name__)
     
-    # Liste des salons disponibles
+    # Configuration des salons Google Chat
+    # Format des IDs :
+    # - Dans l'URL du salon : https://chat.google.com/space/AAAAxxxxxx
+    # - ID à utiliser : space/AAAAxxxxxx
     app.config['AVAILABLE_SPACES'] = {
-        "prod": "spaces/AAAAOA17Cos",  # Salon de production
-        "urgent": "spaces/AAAAOA17Cos"  # Salon pour les urgences
+        "prod": "AAAAOA17Cos",      # Sans le préfixe space/
+        "urgent": "AAAAOA17Cos"     # Sans le préfixe space/
     }
     
     def get_google_chat_session():
@@ -40,8 +43,28 @@ def create_app():
             if not session:
                 raise Exception("Impossible d'établir une session authentifiée avec Google Chat")
 
-            url = f"https://chat.googleapis.com/v1/{space_id}/messages"
-            response = session.post(url, json={"text": message})
+            # Construction de l'URL complète
+            base_url = "https://chat.googleapis.com/v1"
+            # Si space_id commence déjà par 'space/', on l'utilise tel quel
+            if not space_id.startswith('space/'):
+                space_id = f"space/{space_id}"
+            
+            url = f"{base_url}/{space_id}/messages"
+            
+            logger.info(f"Envoi du message vers l'espace: {space_id}")
+            logger.info(f"URL de l'API: {url}")
+            
+            payload = {
+                "text": message,
+                "space": space_id
+            }
+            
+            logger.info(f"Payload: {json.dumps(payload, indent=2)}")
+            
+            response = session.post(url, json=payload)
+            
+            logger.info(f"Statut de la réponse: {response.status_code}")
+            logger.info(f"Réponse: {response.text}")
             
             if response.status_code != 200:
                 raise Exception(f"Erreur lors de l'envoi du message: {response.text}")
@@ -172,12 +195,17 @@ def create_app():
             target_space = data.get('target_space')
             message = data.get('message')
             
+            logger.info(f"Tentative de publication dans l'espace: {target_space}")
+            logger.info(f"Message à publier: {message}")
+            
             if not target_space or not message:
                 return jsonify({"text": "❌ Erreur: Paramètres manquants"})
             
             space_id = app.config['AVAILABLE_SPACES'].get(target_space)
             if not space_id:
                 return jsonify({"text": "❌ Erreur: Salon non reconnu"})
+            
+            logger.info(f"ID du salon cible: {space_id}")
             
             # Envoi du message dans le salon cible
             result = send_message_to_space(space_id, message)
