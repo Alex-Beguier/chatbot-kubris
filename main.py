@@ -1,231 +1,114 @@
+import os
+from datetime import datetime, date
+
 from flask import Flask, request, jsonify
-import functions_framework
-from datetime import datetime
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 
-# Templates de communication
-TEMPLATES = {
-    "incident": {
-        "detection": {
-            "title": "🚨 Incident Détecté",
-            "text": """🚨 **INCIDENT DÉTECTÉ**
+# Initialisation de l'application Flask
+app = Flask(__name__)
 
-⚠️ Un incident a été détecté sur nos services.
+# --- Configuration ---
+SHEET_ID = os.environ.get("SHEET_ID")
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+# Nom exact de l'onglet de votre planning
+SHEET_NAME = 'Equipe_KUBRIS 2025'
 
-📊 **Statut**: Investigation en cours
-⏰ **Heure de détection**: {timestamp}
-👥 **Équipes mobilisées**: Équipe technique
+# Définition de la couleur "bleu d'astreinte"
+# Correspond à la couleur bleu/gris clair (#d9e2f3) de votre planning
+TARGET_BLUE_COLOR = {'red': 0.851, 'green': 0.886, 'blue': 0.953}
 
-📱 Nous vous tiendrons informés de l'évolution de la situation."""
-        },
-        "investigation": {
-            "title": "🔍 Investigation en Cours",
-            "text": """🔍 **MISE À JOUR - INVESTIGATION**
+def is_color_close(color1, color2, tolerance=0.1):
+    """Vérifie si deux couleurs sont similaires."""
+    if not color1 or not color2:
+        return False
+    # L'API ne retourne pas toujours alpha, on l'ignore.
+    return all(abs(color1.get(c, 0) - color2.get(c, 0)) < tolerance for c in ['red', 'green', 'blue'])
 
-📋 **Statut**: Investigation en cours
-⏰ **Dernière mise à jour**: {timestamp}
-
-🛠️ **Actions en cours**:
-• Analyse des logs système
-• Identification de la cause racine
-• Mobilisation des équipes techniques
-
-⏳ Une mise à jour sera fournie dans les 30 minutes."""
-        },
-        "resolution": {
-            "title": "✅ Incident Résolu",
-            "text": """✅ **INCIDENT RÉSOLU**
-
-🎉 L'incident a été résolu avec succès.
-
-📊 **Résumé**:
-• ⏰ Début: {start_time}
-• ⏰ Fin: {timestamp}
-• 🛠️ Cause: {cause}
-• 🔧 Solution: {solution}
-
-📈 Tous les services sont maintenant opérationnels.
-📋 Un rapport détaillé sera publié dans les prochaines 48h."""
-        }
-    },
-    "mep": {
-        "planned": {
-            "title": "📅 MEP Planifiée",
-            "text": """📅 **MISE EN PRODUCTION PLANIFIÉE**
-
-🚀 Une nouvelle version sera déployée prochainement.
-
-📋 **Détails**:
-• ⏰ **Date prévue**: {planned_date}
-• ⏳ **Durée estimée**: {estimated_duration}
-• 🎯 **Impact**: {impact}
-
-✨ **Nouveautés**:
-{changes}
-
-🔔 Vous serez informés du début et de la fin de l'opération."""
-        },
-        "started": {
-            "title": "🚀 MEP en Cours",
-            "text": """🚀 **DÉPLOIEMENT EN COURS**
-
-⚙️ La mise en production a débuté.
-
-📊 **Statut**:
-• ⏰ **Début**: {timestamp}
-• 🎯 **Progression**: En cours
-• ⏳ **Fin estimée**: {estimated_end}
-
-⚠️ Certains services peuvent être temporairement perturbés.
-📱 Vous serez notifiés à la fin de l'opération."""
-        },
-        "completed": {
-            "title": "✅ MEP Terminée",
-            "text": """✅ **DÉPLOIEMENT TERMINÉ**
-
-🎉 La mise en production s'est déroulée avec succès !
-
-📊 **Résumé**:
-• ⏰ **Début**: {start_time}
-• ⏰ **Fin**: {timestamp}
-• ✅ **Statut**: Succès
-
-🌟 **Nouveautés déployées**:
-{changes}
-
-📈 Tous les services sont pleinement opérationnels."""
-        }
+def parse_french_date(date_str):
+    """Parse une date au format 'jj-Mois.-AAAA' (ex: '06-janv.-2025')."""
+    month_map = {
+        'janv.': '01', 'févr.': '02', 'mars': '03', 'avr.': '04', 'mai': '05', 'juin': '06',
+        'juil.': '07', 'août': '08', 'sept.': '09', 'oct.': '10', 'nov.': '11', 'déc.': '12'
     }
-}
+    for month_fr, month_num in month_map.items():
+        if month_fr in date_str:
+            # Reconstitue une date au format 'jj-mm-AAAA'
+            date_str_num = date_str.replace(month_fr, month_num).split(' ')[-1]
+            return datetime.strptime(date_str_num, '%d-%m-%Y').date()
+    return None
 
-def get_timestamp():
-    """Retourne l'horodatage au format français"""
-    return datetime.now().strftime("%d/%m/%Y à %H:%M")
+def get_on_call_engineer():
+    """
+    Se connecte au Google Sheet, trouve la ligne pour la date actuelle,
+    puis cherche la cellule surlignée en bleu pour identifier l'ingénieur d'astreinte.
+    """
+    if not SHEET_ID:
+        return "Erreur de configuration : la variable d'environnement SHEET_ID est manquante."
 
-def create_card_response(title, text):
-    """Crée une réponse formatée pour Google Chat avec bouton de copie"""
-    return {
-        "cardsV2": [
-            {
-                "cardId": "unique-card-id",
-                "card": {
-                    "header": {
-                        "title": title,
-                        "imageUrl": None,
-                        "imageType": "CIRCLE"
-                    },
-                    "sections": [
-                        {
-                            "widgets": [
-                                {
-                                    "textParagraph": {
-                                        "text": text
-                                    }
-                                }
-                            ]
-                        },
-                        {
-                            "widgets": [
-                                {
-                                    "decoratedText": {
-                                        "text": text,
-                                        "button": {
-                                            "text": "📋 Copier",
-                                            "onClick": {
-                                                "action": {
-                                                    "actionMethodName": "copyToClipboard"
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    ]
-                }
-            }
-        ]
-    }
+    try:
+        creds = service_account.Credentials.from_service_account_info({}, scopes=SCOPES)
+        service = build('sheets', 'v4', credentials=creds)
+        
+        # Requête pour récupérer les valeurs ET le formatage (couleurs)
+        request = service.spreadsheets().get(
+            spreadsheetId=SHEET_ID,
+            ranges=[f'{SHEET_NAME}'],
+            includeGridData=True
+        )
+        response = request.execute()
+        
+        # Accède aux données de la première feuille (onglet)
+        grid_data = response['sheets'][0]['data'][0]
+        rows_data = grid_data.get('rowData', [])
+        
+        # La ligne 2 (index 1) contient les noms des ingénieurs (en-têtes)
+        if len(rows_data) < 2 or not rows_data[1].get('values'):
+             return "Le planning est vide ou les en-têtes (ligne 2) sont manquants."
+        header_row = [cell.get('formattedValue', '') for cell in rows_data[1].get('values', [])]
 
-@functions_framework.http
-def handle_chat_webhook(request):
-    """Point d'entrée principal pour les webhooks Google Chat"""
-    if request.method != 'POST':
-        return 'Méthode non autorisée', 405
+        today = date.today()
+        # On parcourt les lignes de données (en sautant les 3 premières lignes d'en-tête)
+        for row_data in rows_data[3:]:
+            cells = row_data.get('values', [])
+            # La date est dans la colonne B (index 1)
+            if not cells or len(cells) < 2 or not cells[1].get('formattedValue'):
+                continue
+            
+            date_str = cells[1].get('formattedValue')
+            current_row_date = parse_french_date(date_str)
 
-    data = request.get_json()
-    if not data:
-        return 'Requête invalide', 400
+            if current_row_date and current_row_date == today:
+                # C'est la bonne journée, cherchons la cellule bleue
+                for col_index, cell_data in enumerate(cells):
+                    bg_color = cell_data.get('effectiveFormat', {}).get('backgroundColor')
+                    
+                    if bg_color and all(k in bg_color for k in ['red', 'green', 'blue']):
+                        if is_color_close(bg_color, TARGET_BLUE_COLOR):
+                            # La colonne de l'ingénieur correspond à l'index de la cellule
+                            if col_index < len(header_row):
+                                engineer_name = header_row[col_index]
+                                return f"Aujourd'hui, la personne d'astreinte est : **{engineer_name}**."
+                
+                return f"J'ai trouvé la date du jour ({today.strftime('%d/%m/%Y')}), mais aucune astreinte (cellule bleue) n'est définie."
 
-    message = data.get('message', {})
-    text = message.get('text', '').lower().strip()
-    
-    # Gestion des commandes
-    if text.startswith('/incident'):
-        parts = text.split()
-        if len(parts) < 2:
-            # Afficher l'aide pour la commande incident
-            help_text = """🚨 **Commandes Incident disponibles:**
+        return f"Je n'ai pas trouvé la date d'aujourd'hui ({today.strftime('%d/%m/%Y')}) dans le planning."
 
-• `/incident detection` - Signaler un nouvel incident
-• `/incident investigation` - Mise à jour de l'investigation
-• `/incident resolution` - Marquer l'incident comme résolu
+    except Exception as e:
+        print(f"Une erreur est survenue: {e}")
+        return "Désolé, une erreur technique m'empêche de consulter le planning."
 
-Exemple: `/incident detection`"""
-            return jsonify(create_card_response("Aide - Commandes Incident", help_text))
+@app.route('/', methods=['POST'])
+def handle_chat_event():
+    """Point d'entrée principal qui reçoit les événements de Google Chat."""
+    event_data = request.get_json()
 
-        command = parts[1]
-        if command in TEMPLATES['incident']:
-            template = TEMPLATES['incident'][command]
-            formatted_text = template['text'].format(
-                timestamp=get_timestamp(),
-                start_time=get_timestamp(),
-                cause="[À compléter]",
-                solution="[À compléter]"
-            )
-            return jsonify(create_card_response(template['title'], formatted_text))
+    if event_data and event_data['type'] == 'MESSAGE':
+        response_text = get_on_call_engineer()
+        return jsonify({'text': response_text})
 
-    elif text.startswith('/mep'):
-        parts = text.split()
-        if len(parts) < 2:
-            # Afficher l'aide pour la commande MEP
-            help_text = """🚀 **Commandes MEP disponibles:**
+    return jsonify({})
 
-• `/mep planned` - Annoncer une MEP planifiée
-• `/mep started` - Signaler le début du déploiement
-• `/mep completed` - Marquer la MEP comme terminée
+if __name__ == "__main__":
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
 
-Exemple: `/mep planned`"""
-            return jsonify(create_card_response("Aide - Commandes MEP", help_text))
-
-        command = parts[1]
-        if command in TEMPLATES['mep']:
-            template = TEMPLATES['mep'][command]
-            formatted_text = template['text'].format(
-                timestamp=get_timestamp(),
-                planned_date="[Date à définir]",
-                estimated_duration="30 minutes",
-                impact="Impact minimal attendu",
-                changes="• [Nouvelles fonctionnalités à lister]\n• [Corrections à lister]",
-                estimated_end=get_timestamp(),
-                start_time=get_timestamp()
-            )
-            return jsonify(create_card_response(template['title'], formatted_text))
-
-    # Message d'aide par défaut
-    help_text = """🤖 **Bot de Communication**
-
-**Commandes disponibles:**
-
-🚨 **Incidents:**
-• `/incident detection` - Signaler un incident
-• `/incident investigation` - Mise à jour investigation
-• `/incident resolution` - Marquer comme résolu
-
-🚀 **MEP:**
-• `/mep planned` - Annoncer une MEP
-• `/mep started` - Début du déploiement
-• `/mep completed` - Fin du déploiement
-
-Tapez une commande pour obtenir le template correspondant."""
-
-    return jsonify(create_card_response("Aide - Commandes Disponibles", help_text)) 
