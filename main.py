@@ -102,7 +102,7 @@ def get_timestamp():
     return datetime.now().strftime("%d/%m/%Y à %H:%M")
 
 def create_card_response(title, text):
-    """Crée une réponse formatée pour Google Chat"""
+    """Crée une réponse formatée pour Google Chat avec bouton de copie"""
     return {
         "cardsV2": [
             {
@@ -122,6 +122,30 @@ def create_card_response(title, text):
                                     }
                                 }
                             ]
+                        },
+                        {
+                            "widgets": [
+                                {
+                                    "buttonList": {
+                                        "buttons": [
+                                            {
+                                                "text": "📋 Copier le message",
+                                                "onClick": {
+                                                    "action": {
+                                                        "function": "copy_to_clipboard",
+                                                        "parameters": [
+                                                            {
+                                                                "key": "text",
+                                                                "value": text
+                                                            }
+                                                        ]
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
                         }
                     ]
                 }
@@ -138,6 +162,22 @@ def handle_chat_webhook(request):
     data = request.get_json()
     if not data:
         return 'Requête invalide', 400
+
+    # Si c'est une action de copie
+    if data.get('type') == 'MESSAGE_ACTION' and data.get('actionMethodName') == 'copy_to_clipboard':
+        try:
+            text = next(
+                param['value'] 
+                for param in data.get('action', {}).get('parameters', [])
+                if param['key'] == 'text'
+            )
+            return jsonify({
+                "text": "✅ Message copié ! Vous pouvez maintenant le coller dans un autre salon."
+            })
+        except (KeyError, StopIteration):
+            return jsonify({
+                "text": "❌ Erreur: Impossible de copier le message."
+            })
 
     message = data.get('message', {})
     text = message.get('text', '').lower().strip()
