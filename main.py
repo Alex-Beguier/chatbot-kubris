@@ -6,8 +6,12 @@ from google.auth import default
 from google.auth.transport.requests import AuthorizedSession
 import os
 
-app = Flask(__name__)
+# Configuration du logging
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Initialisation de l'application Flask
+app = Flask(__name__)
 
 # Liste des salons disponibles
 # Pour trouver l'ID d'un salon :
@@ -15,8 +19,6 @@ logging.basicConfig(level=logging.INFO)
 # 2. L'URL sera comme : https://chat.google.com/room/AAAAxxxxx
 # 3. Prenez la partie AAAAxxxxx et ajoutez "spaces/" devant
 AVAILABLE_SPACES = {
-    # Exemple : si l'URL est https://chat.google.com/room/AAAAaaaaa
-    # alors l'ID est "spaces/AAAAaaaaa"
     "prod": "spaces/AAAAOA17Cos",  # Salon de production
     "urgent": "spaces/AAAAOA17Cos"  # Salon pour les urgences
 }
@@ -148,22 +150,26 @@ def get_google_chat_session():
         credentials.refresh_token = None  # Force l'utilisation des credentials de service
         return AuthorizedSession(credentials)
     except Exception as e:
-        logging.error(f"Erreur d'authentification Google: {str(e)}")
+        logger.error(f"Erreur d'authentification Google: {str(e)}")
         return None
 
 def send_message_to_space(space_id, message):
     """Envoie un message dans un salon Google Chat spécifique"""
-    session = get_google_chat_session()
-    if not session:
-        raise Exception("Impossible d'établir une session authentifiée avec Google Chat")
+    try:
+        session = get_google_chat_session()
+        if not session:
+            raise Exception("Impossible d'établir une session authentifiée avec Google Chat")
 
-    url = f"https://chat.googleapis.com/v1/{space_id}/messages"
-    response = session.post(url, json={"text": message})
-    
-    if response.status_code != 200:
-        raise Exception(f"Erreur lors de l'envoi du message: {response.text}")
-    
-    return response.json()
+        url = f"https://chat.googleapis.com/v1/{space_id}/messages"
+        response = session.post(url, json={"text": message})
+        
+        if response.status_code != 200:
+            raise Exception(f"Erreur lors de l'envoi du message: {response.text}")
+        
+        return response.json()
+    except Exception as e:
+        logger.error(f"Erreur dans send_message_to_space: {str(e)}")
+        raise
 
 @app.route('/', methods=['POST'])
 def handle_chat_event():
@@ -174,7 +180,7 @@ def handle_chat_event():
         if not event:
             return jsonify({"text": "Erreur: Aucune donnée reçue"})
         
-        logging.info(f"Événement reçu: {json.dumps(event, indent=2)}")
+        logger.info(f"Événement reçu: {json.dumps(event, indent=2)}")
         
         # Extraire le message et les informations de thread
         message_text = event.get('message', {}).get('text', '').strip()
@@ -201,7 +207,7 @@ def handle_chat_event():
             return jsonify(create_chat_response(help_text, thread_name))
             
     except Exception as e:
-        logging.error(f"Erreur dans handle_chat_event: {str(e)}")
+        logger.error(f"Erreur dans handle_chat_event: {str(e)}")
         return jsonify({"text": f"❌ Erreur: {str(e)}"})
 
 def handle_incident_command(message_text, thread_name):
@@ -256,14 +262,6 @@ def handle_mep_command(message_text, thread_name):
             thread_name
         ))
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Endpoint de santé pour Cloud Run"""
-    return jsonify({
-        "status": "healthy",
-        "timestamp": get_timestamp()
-    })
-
 @app.route('/publish', methods=['POST'])
 def publish_message():
     """Gère la republication d'un message dans un autre salon"""
@@ -287,11 +285,19 @@ def publish_message():
         })
         
     except Exception as e:
-        logging.error(f"Erreur lors de la publication: {str(e)}")
+        logger.error(f"Erreur lors de la publication: {str(e)}")
         return jsonify({"text": f"❌ Erreur lors de la publication: {str(e)}"})
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Endpoint de santé pour Cloud Run"""
+    return jsonify({
+        "status": "healthy",
+        "timestamp": datetime.now().strftime("%d/%m/%Y à %H:%M")
+    })
+
+# Point d'entrée de l'application
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port)
 
