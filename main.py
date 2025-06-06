@@ -49,7 +49,10 @@ def format_message(template, **kwargs):
 def create_chat_response(text, thread_key=None):
     """Crée une réponse formatée pour Google Chat"""
     response = {
-        "text": text
+        "text": text,
+        "actionResponse": {
+            "type": "NEW_MESSAGE"
+        }
     }
     
     if thread_key:
