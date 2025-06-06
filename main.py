@@ -1,5 +1,6 @@
 # Fichier : main.py
 # -----------------------------------------------------------------------------
+# Version corrigée avec un meilleur formatage pour éviter les erreurs de syntaxe.
 # Ce fichier contient une application web Flask qui agit comme le backend
 # pour notre chatbot Google Chat.
 
@@ -93,13 +94,50 @@ def handle_chat_event():
 def create_incident_form_card():
     """Construit et retourne la carte interactive pour un incident."""
     return {
-        "cardsV2": [{"cardId": "incidentForm", "card": {"header": {"title": "Déclarer un nouvel incident"}, "sections": [{"widgets": [{"textInput": {"label": "Cluster / Application", "name": "cluster"}}, {"textInput": {"label": "Date et heure de début", "name": "startDate", "value": "Mardi 03/06/2025 13h00"}}, {"textInput": {"label": "Description de la situation", "name": "status", "value": "L'origine du problème a été identifiée et est en cours de correction"}}, {"textInput": {"label": "Services impactés (séparés par /)", "name": "services", "value": "ArgoCD / Octoperf / SonarKube"}}, {"buttonList": {"buttons": [{"text": "Générer le message", "onClick": {"action": {"function": "generateIncidentMessage"}}}]}}]}}]}]
+        "cardsV2": [
+            {
+                "cardId": "incidentForm",
+                "card": {
+                    "header": {"title": "Déclarer un nouvel incident"},
+                    "sections": [
+                        {
+                            "widgets": [
+                                {"textInput": {"label": "Cluster / Application", "name": "cluster"}},
+                                {"textInput": {"label": "Date et heure de début", "name": "startDate", "value": "Mardi 03/06/2025 13h00"}},
+                                {"textInput": {"label": "Description de la situation", "name": "status", "value": "L'origine du problème a été identifiée et est en cours de correction"}},
+                                {"textInput": {"label": "Services impactés (séparés par /)", "name": "services", "value": "ArgoCD / Octoperf / SonarKube"}},
+                                {"buttonList": {"buttons": [{"text": "Générer le message", "onClick": {"action": {"function": "generateIncidentMessage"}}}]}}
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
     }
 
 def create_mep_form_card():
     """Construit et retourne la carte interactive pour une MEP."""
     return {
-        "cardsV2": [{"cardId": "mepForm", "card": {"header": {"title": "Annoncer une Mise en Production"}, "sections": [{"widgets": [{"textInput": {"label": "Composant principal", "name": "component", "value": "VAULT"}}, {"textInput": {"label": "Date et créneau", "name": "date", "value": "10/06 12h-14h"}}, {"textInput": {"label": "Cible", "name": "target", "value": "Vault Production"}}, {"textInput": {"label": "Impact", "name": "impact", "value": "Sans impact, sauf en cas de retour arrière"}}, {"textInput": {"label": "Numéro de MEP", "name": "mepNumber", "value": "MEP0000866105"}}, {"buttonList": {"buttons": [{"text": "Générer le message", "onClick": {"action": {"function": "generateMepMessage"}}}]}}]}}]}]
+        "cardsV2": [
+            {
+                "cardId": "mepForm",
+                "card": {
+                    "header": {"title": "Annoncer une Mise en Production"},
+                    "sections": [
+                        {
+                            "widgets": [
+                                {"textInput": {"label": "Composant principal", "name": "component", "value": "VAULT"}},
+                                {"textInput": {"label": "Date et créneau", "name": "date", "value": "10/06 12h-14h"}},
+                                {"textInput": {"label": "Cible", "name": "target", "value": "Vault Production"}},
+                                {"textInput": {"label": "Impact", "name": "impact", "value": "Sans impact, sauf en cas de retour arrière"}},
+                                {"textInput": {"label": "Numéro de MEP", "name": "mepNumber", "value": "MEP0000866105"}},
+                                {"buttonList": {"buttons": [{"text": "Générer le message", "onClick": {"action": {"function": "generateMepMessage"}}}]}}
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
     }
 
 if __name__ == "__main__":
