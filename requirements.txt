@@ -1,7 +1,3 @@
-Flask==2.0.1
-gunicorn==21.2.0
-requests==2.31.0
-google-auth==2.23.0
-google-auth-httplib2==0.1.1
-google-api-python-client==2.108.0
-
+flask==2.0.1
+functions-framework==3.*
+gunicorn==21.2.0 

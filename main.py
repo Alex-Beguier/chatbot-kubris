@@ -1,80 +1,120 @@
-from flask import Flask, request, jsonify, make_response
-import json
+from flask import Flask, request, jsonify
+import functions_framework
 from datetime import datetime
-import logging
-import os
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
 
-# Configuration du logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# Templates de communication prédéfinis
-COMMUNICATION_TEMPLATES = {
+# Templates de communication
+TEMPLATES = {
     "incident": {
-        "title": "🚨 Communication d'incident",
-        "messages": {
-            "detection": "📢 **INCIDENT DÉTECTÉ**\n\n⚠️ Nous avons détecté un incident sur nos services.\n\n🔍 **Statut**: Investigation en cours\n⏰ **Heure de détection**: {timestamp}\n👥 **Équipes mobilisées**: Équipe technique\n\n📊 Nous vous tiendrons informés de l'évolution de la situation.",
-            
-            "investigation": "🔍 **MISE À JOUR - INVESTIGATION**\n\n📋 **Statut**: Investigation en cours\n⏰ **Dernière mise à jour**: {timestamp}\n\n🛠️ **Actions en cours**:\n• Analyse des logs système\n• Identification de la cause racine\n• Mobilisation des équipes techniques\n\n⏳ Prochaine mise à jour prévue dans 30 minutes.",
-            
-            "resolution": "✅ **INCIDENT RÉSOLU**\n\n🎉 L'incident a été résolu avec succès.\n\n📊 **Résumé**:\n• ⏰ Début: {start_time}\n• ⏰ Fin: {timestamp}\n• 🛠️ Cause: [À compléter]\n• 🔧 Solution: [À compléter]\n\n📈 Tous les services sont maintenant opérationnels.\n\n📋 Un rapport post-mortem sera publié dans les 48h."
+        "detection": {
+            "title": "🚨 Incident Détecté",
+            "text": """🚨 **INCIDENT DÉTECTÉ**
+
+⚠️ Un incident a été détecté sur nos services.
+
+📊 **Statut**: Investigation en cours
+⏰ **Heure de détection**: {timestamp}
+👥 **Équipes mobilisées**: Équipe technique
+
+📱 Nous vous tiendrons informés de l'évolution de la situation."""
+        },
+        "investigation": {
+            "title": "🔍 Investigation en Cours",
+            "text": """🔍 **MISE À JOUR - INVESTIGATION**
+
+📋 **Statut**: Investigation en cours
+⏰ **Dernière mise à jour**: {timestamp}
+
+🛠️ **Actions en cours**:
+• Analyse des logs système
+• Identification de la cause racine
+• Mobilisation des équipes techniques
+
+⏳ Une mise à jour sera fournie dans les 30 minutes."""
+        },
+        "resolution": {
+            "title": "✅ Incident Résolu",
+            "text": """✅ **INCIDENT RÉSOLU**
+
+🎉 L'incident a été résolu avec succès.
+
+📊 **Résumé**:
+• ⏰ Début: {start_time}
+• ⏰ Fin: {timestamp}
+• 🛠️ Cause: {cause}
+• 🔧 Solution: {solution}
+
+📈 Tous les services sont maintenant opérationnels.
+📋 Un rapport détaillé sera publié dans les prochaines 48h."""
         }
     },
-    
     "mep": {
-        "title": "🚀 Communication de mise en production",
-        "messages": {
-            "planned": "📅 **MISE EN PRODUCTION PLANIFIÉE**\n\n🚀 Une nouvelle version sera déployée.\n\n📋 **Détails**:\n• ⏰ **Date prévue**: {deployment_date}\n• ⏳ **Durée estimée**: 30 minutes\n• 🎯 **Impact**: Interruption de service possible\n\n✨ **Nouveautés**:\n• [À compléter - nouvelles fonctionnalités]\n• [À compléter - corrections de bugs]\n\n🔔 Nous vous préviendrons du début et de la fin de la maintenance.",
-            
-            "started": "🚀 **DÉPLOIEMENT EN COURS**\n\n⚙️ La mise en production a commencé.\n\n📊 **Statut**:\n• ⏰ **Début**: {timestamp}\n• 🎯 **Progression**: Déploiement en cours\n• ⏳ **Fin estimée**: {end_time}\n\n⚠️ Les services peuvent être temporairement indisponibles.\n\n📱 Suivez cette conversation pour les mises à jour.",
-            
-            "completed": "✅ **DÉPLOIEMENT TERMINÉ**\n\n🎉 La mise en production s'est déroulée avec succès !\n\n📊 **Résumé**:\n• ⏰ **Début**: {start_time}\n• ⏰ **Fin**: {timestamp}\n• ✅ **Statut**: Succès\n\n🌟 **Nouveautés disponibles**:\n• [À compléter - nouvelles fonctionnalités]\n\n📈 Tous les services sont opérationnels."
+        "planned": {
+            "title": "📅 MEP Planifiée",
+            "text": """📅 **MISE EN PRODUCTION PLANIFIÉE**
+
+🚀 Une nouvelle version sera déployée prochainement.
+
+📋 **Détails**:
+• ⏰ **Date prévue**: {planned_date}
+• ⏳ **Durée estimée**: {estimated_duration}
+• 🎯 **Impact**: {impact}
+
+✨ **Nouveautés**:
+{changes}
+
+🔔 Vous serez informés du début et de la fin de l'opération."""
+        },
+        "started": {
+            "title": "🚀 MEP en Cours",
+            "text": """🚀 **DÉPLOIEMENT EN COURS**
+
+⚙️ La mise en production a débuté.
+
+📊 **Statut**:
+• ⏰ **Début**: {timestamp}
+• 🎯 **Progression**: En cours
+• ⏳ **Fin estimée**: {estimated_end}
+
+⚠️ Certains services peuvent être temporairement perturbés.
+📱 Vous serez notifiés à la fin de l'opération."""
+        },
+        "completed": {
+            "title": "✅ MEP Terminée",
+            "text": """✅ **DÉPLOIEMENT TERMINÉ**
+
+🎉 La mise en production s'est déroulée avec succès !
+
+📊 **Résumé**:
+• ⏰ **Début**: {start_time}
+• ⏰ **Fin**: {timestamp}
+• ✅ **Statut**: Succès
+
+🌟 **Nouveautés déployées**:
+{changes}
+
+📈 Tous les services sont pleinement opérationnels."""
         }
     }
 }
 
-# Création de l'application Flask
-app = Flask(__name__)
-
-# Configuration de l'API Google Chat
-SCOPES = ['https://www.googleapis.com/auth/chat.bot']
-SERVICE_ACCOUNT_FILE = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'service-account.json')
-
 def get_timestamp():
-    """Retourne un timestamp formaté"""
+    """Retourne l'horodatage au format français"""
     return datetime.now().strftime("%d/%m/%Y à %H:%M")
 
-def format_message(template, **kwargs):
-    """Formate un message avec les variables fournies"""
-    default_vars = {
-        'timestamp': get_timestamp(),
-        'start_time': get_timestamp(),
-        'end_time': get_timestamp(),
-        'deployment_date': get_timestamp()
-    }
-    default_vars.update(kwargs)
-    return template.format(**default_vars)
-
-def create_chat_response(text, thread_key=None, add_copy_option=True):
-    """Crée une réponse formatée pour Google Chat avec options de copie et publication"""
-    if add_copy_option:
-        # Récupérer l'identifiant du salon à partir du thread_key
-        space = thread_key.split('/threads/')[0] if thread_key else None
-        
-        response = {
-            "cardsV2": [{
-                "cardId": "message_card",
+def create_card_response(title, text):
+    """Crée une réponse formatée pour Google Chat"""
+    return {
+        "cardsV2": [
+            {
+                "cardId": "unique-card-id",
                 "card": {
+                    "header": {
+                        "title": title,
+                        "imageUrl": None,
+                        "imageType": "CIRCLE"
+                    },
                     "sections": [
                         {
-                            "header": "Message",
-                            "collapsible": False,
-                            "uncollapsibleWidgetsCount": 1,
                             "widgets": [
                                 {
                                     "textParagraph": {
@@ -82,245 +122,93 @@ def create_chat_response(text, thread_key=None, add_copy_option=True):
                                     }
                                 }
                             ]
-                        },
-                        {
-                            "header": "Actions",
-                            "collapsible": False,
-                            "widgets": [
-                                {
-                                    "buttonList": {
-                                        "buttons": [
-                                            {
-                                                "text": "📋 Copier le message",
-                                                "onClick": {
-                                                    "action": {
-                                                        "function": "copy_to_clipboard",
-                                                        "parameters": [
-                                                            {
-                                                                "key": "text",
-                                                                "value": text
-                                                            }
-                                                        ]
-                                                    }
-                                                }
-                                            },
-                                            {
-                                                "text": "📢 Publier le message",
-                                                "onClick": {
-                                                    "action": {
-                                                        "function": "publish_message",
-                                                        "parameters": [
-                                                            {
-                                                                "key": "text",
-                                                                "value": text
-                                                            },
-                                                            {
-                                                                "key": "space",
-                                                                "value": space
-                                                            }
-                                                        ]
-                                                    }
-                                                }
-                                            }
-                                        ]
-                                    }
-                                }
-                            ]
                         }
                     ]
                 }
-            }]
-        }
-    else:
-        response = {"text": text}
+            }
+        ]
+    }
 
-    if thread_key:
-        response["thread"] = {"name": thread_key}
-    
-    return response
+@functions_framework.http
+def handle_chat_webhook(request):
+    """Point d'entrée principal pour les webhooks Google Chat"""
+    if request.method != 'POST':
+        return 'Méthode non autorisée', 405
 
-def handle_incident_command(message_text, thread_name):
-    """Traite les commandes d'incident"""
-    parts = message_text.split()
-    
-    if len(parts) < 2:
-        help_text = (
-            "📋 **Commandes incident disponibles:**\n\n"
-            "• `/incident detection` - Signaler un incident détecté\n"
-            "• `/incident investigation` - Mise à jour de l'investigation\n"
-            "• `/incident resolution` - Signaler la résolution de l'incident"
-        )
-        return create_chat_response(help_text, thread_name)
-    
-    subcommand = parts[1].lower()
-    templates = COMMUNICATION_TEMPLATES["incident"]["messages"]
-    
-    if subcommand in templates:
-        message = format_message(templates[subcommand])
-        return create_chat_response(message, thread_name)
-    else:
-        return create_chat_response(
-            f"❌ Sous-commande '{subcommand}' non reconnue. "
-            "Utilisez: detection, investigation, ou resolution", 
-            thread_name
-        )
+    data = request.get_json()
+    if not data:
+        return 'Requête invalide', 400
 
-def handle_mep_command(message_text, thread_name):
-    """Traite les commandes de mise en production"""
-    parts = message_text.split()
+    message = data.get('message', {})
+    text = message.get('text', '').lower().strip()
     
-    if len(parts) < 2:
-        help_text = (
-            "🚀 **Commandes MEP disponibles:**\n\n"
-            "• `/mep planned` - Annoncer une MEP planifiée\n"
-            "• `/mep started` - Signaler le début du déploiement\n"
-            "• `/mep completed` - Signaler la fin du déploiement"
-        )
-        return create_chat_response(help_text, thread_name)
-    
-    subcommand = parts[1].lower()
-    templates = COMMUNICATION_TEMPLATES["mep"]["messages"]
-    
-    if subcommand in templates:
-        message = format_message(templates[subcommand])
-        return create_chat_response(message, thread_name)
-    else:
-        return create_chat_response(
-            f"❌ Sous-commande '{subcommand}' non reconnue. "
-            "Utilisez: planned, started, ou completed", 
-            thread_name
-        )
+    # Gestion des commandes
+    if text.startswith('/incident'):
+        parts = text.split()
+        if len(parts) < 2:
+            # Afficher l'aide pour la commande incident
+            help_text = """🚨 **Commandes Incident disponibles:**
 
-def get_chat_service():
-    """Initialise le service Google Chat"""
-    try:
-        credentials = service_account.Credentials.from_service_account_file(
-            SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-        service = build('chat', 'v1', credentials=credentials)
-        return service
-    except Exception as e:
-        logger.error(f"Erreur lors de l'initialisation du service Chat: {str(e)}")
-        return None
+• `/incident detection` - Signaler un nouvel incident
+• `/incident investigation` - Mise à jour de l'investigation
+• `/incident resolution` - Marquer l'incident comme résolu
 
-@app.route('/', methods=['POST'])
-def handle_chat_event():
-    """Gestionnaire principal pour les événements Google Chat"""
-    try:
-        event = request.get_json()
-        
-        if not event:
-            response = create_chat_response("Erreur: Aucune donnée reçue", None, False)
-            return make_response(jsonify(response), 200)
-        
-        logger.info(f"Événement reçu: {json.dumps(event, indent=2)}")
-        
-        # Extraire le message et les informations de thread
-        message_text = event.get('message', {}).get('text', '').strip()
-        thread_name = event.get('message', {}).get('thread', {}).get('name')
-        
-        # Traiter les commandes slash
-        if message_text.startswith('/incident'):
-            response = handle_incident_command(message_text, thread_name)
-        elif message_text.startswith('/mep'):
-            response = handle_mep_command(message_text, thread_name)
-        else:
-            help_text = (
-                "🤖 **Commandes disponibles:**\n\n"
-                "**📋 Incidents:**\n"
-                "• `/incident detection` - Signaler un incident\n"
-                "• `/incident investigation` - Mise à jour investigation\n"
-                "• `/incident resolution` - Signaler la résolution\n\n"
-                "**🚀 Mises en production:**\n"
-                "• `/mep planned` - Annoncer une MEP planifiée\n"
-                "• `/mep started` - Signaler le début du déploiement\n"
-                "• `/mep completed` - Signaler la fin du déploiement\n\n"
-                "💡 *Tapez une commande pour obtenir le message correspondant.*"
+Exemple: `/incident detection`"""
+            return jsonify(create_card_response("Aide - Commandes Incident", help_text))
+
+        command = parts[1]
+        if command in TEMPLATES['incident']:
+            template = TEMPLATES['incident'][command]
+            formatted_text = template['text'].format(
+                timestamp=get_timestamp(),
+                start_time=get_timestamp(),
+                cause="[À compléter]",
+                solution="[À compléter]"
             )
-            response = create_chat_response(help_text, thread_name)
-        
-        return make_response(jsonify(response), 200)
-            
-    except Exception as e:
-        logger.error(f"Erreur dans handle_chat_event: {str(e)}")
-        error_response = create_chat_response(f"❌ Erreur: {str(e)}", None, False)
-        return make_response(jsonify(error_response), 200)
+            return jsonify(create_card_response(template['title'], formatted_text))
 
-@app.route('/copy', methods=['POST'])
-def copy_to_clipboard():
-    """Retourne le texte à copier"""
-    try:
-        data = request.get_json()
-        text = data.get('text')
-        
-        if not text:
-            response = create_chat_response("❌ Erreur: Texte manquant", None, False)
-            return make_response(jsonify(response), 200)
-        
-        response = create_chat_response("✅ Message copié ! Vous pouvez maintenant le coller dans le salon de votre choix.", None, False)
-        return make_response(jsonify(response), 200)
-        
-    except Exception as e:
-        logger.error(f"Erreur lors de la copie: {str(e)}")
-        error_response = create_chat_response(f"❌ Erreur: {str(e)}", None, False)
-        return make_response(jsonify(error_response), 200)
+    elif text.startswith('/mep'):
+        parts = text.split()
+        if len(parts) < 2:
+            # Afficher l'aide pour la commande MEP
+            help_text = """🚀 **Commandes MEP disponibles:**
 
-@app.route('/publish', methods=['POST'])
-def publish_message():
-    """Publie le message dans le salon"""
-    try:
-        data = request.get_json()
-        text = data.get('text')
-        space = data.get('space')  # L'identifiant du salon où publier
-        
-        if not text:
-            response = create_chat_response("❌ Erreur: Texte manquant", None, False)
-            return make_response(jsonify(response), 200)
-            
-        if not space:
-            response = create_chat_response("❌ Erreur: Identifiant du salon manquant", None, False)
-            return make_response(jsonify(response), 200)
-        
-        # Initialiser le service Google Chat
-        chat_service = get_chat_service()
-        if not chat_service:
-            response = create_chat_response("❌ Erreur: Impossible de se connecter à l'API Google Chat", None, False)
-            return make_response(jsonify(response), 200)
-        
-        try:
-            # Créer le message à publier
-            message = {'text': text}
-            
-            # Publier le message dans le salon
-            result = chat_service.spaces().messages().create(
-                parent=space,
-                body=message
-            ).execute()
-            
-            response = create_chat_response("✅ Message publié avec succès !", None, False)
-            return make_response(jsonify(response), 200)
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la publication du message: {str(e)}")
-            response = create_chat_response(f"❌ Erreur lors de la publication: {str(e)}", None, False)
-            return make_response(jsonify(response), 200)
-        
-    except Exception as e:
-        logger.error(f"Erreur lors de la publication: {str(e)}")
-        error_response = create_chat_response(f"❌ Erreur: {str(e)}", None, False)
-        return make_response(jsonify(error_response), 200)
+• `/mep planned` - Annoncer une MEP planifiée
+• `/mep started` - Signaler le début du déploiement
+• `/mep completed` - Marquer la MEP comme terminée
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Endpoint de santé pour Cloud Run"""
-    return make_response(jsonify({
-        "status": "healthy",
-        "timestamp": get_timestamp()
-    }), 200)
+Exemple: `/mep planned`"""
+            return jsonify(create_card_response("Aide - Commandes MEP", help_text))
 
-# Ne garder que la partie de développement
-if __name__ == '__main__':
-    # Configuration de développement uniquement
-    app.debug = True
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
+        command = parts[1]
+        if command in TEMPLATES['mep']:
+            template = TEMPLATES['mep'][command]
+            formatted_text = template['text'].format(
+                timestamp=get_timestamp(),
+                planned_date="[Date à définir]",
+                estimated_duration="30 minutes",
+                impact="Impact minimal attendu",
+                changes="• [Nouvelles fonctionnalités à lister]\n• [Corrections à lister]",
+                estimated_end=get_timestamp(),
+                start_time=get_timestamp()
+            )
+            return jsonify(create_card_response(template['title'], formatted_text))
 
+    # Message d'aide par défaut
+    help_text = """🤖 **Bot de Communication**
+
+**Commandes disponibles:**
+
+🚨 **Incidents:**
+• `/incident detection` - Signaler un incident
+• `/incident investigation` - Mise à jour investigation
+• `/incident resolution` - Marquer comme résolu
+
+🚀 **MEP:**
+• `/mep planned` - Annoncer une MEP
+• `/mep started` - Début du déploiement
+• `/mep completed` - Fin du déploiement
+
+Tapez une commande pour obtenir le template correspondant."""
+
+    return jsonify(create_card_response("Aide - Commandes Disponibles", help_text)) 
