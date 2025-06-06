@@ -1,8 +1,3 @@
-# Fichier : Dockerfile
-# -----------------------------------------------------------------------------
-# Instructions pour construire l'image de conteneur de notre application.
-
-# 1. Utiliser une image de base Python officielle et légère.
 FROM python:3.9-slim
 
 # 2. Définir une variable d'environnement pour que Python affiche les logs immédiatement.
