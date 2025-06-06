@@ -234,7 +234,10 @@ def health_check():
         "timestamp": get_timestamp()
     }), 200)
 
+# Ne garder que la partie de développement
 if __name__ == '__main__':
+    # Configuration de développement uniquement
+    app.debug = True
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
 
