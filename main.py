@@ -126,27 +126,16 @@ def create_card_response(title, text):
                         {
                             "widgets": [
                                 {
-                                    "buttonList": {
-                                        "buttons": [
-                                            {
-                                                "text": "📋 Copier le message",
-                                                "onClick": {
-                                                    "action": {
-                                                        "function": "client_side_action",
-                                                        "parameters": [
-                                                            {
-                                                                "key": "type",
-                                                                "value": "COPY_TO_CLIPBOARD"
-                                                            },
-                                                            {
-                                                                "key": "text",
-                                                                "value": text
-                                                            }
-                                                        ]
-                                                    }
+                                    "decoratedText": {
+                                        "text": text,
+                                        "button": {
+                                            "text": "📋 Copier",
+                                            "onClick": {
+                                                "action": {
+                                                    "actionMethodName": "copyToClipboard"
                                                 }
                                             }
-                                        ]
+                                        }
                                     }
                                 }
                             ]
