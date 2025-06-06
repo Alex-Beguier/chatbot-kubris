@@ -19,11 +19,11 @@ def create_app():
     
     # Configuration des salons Google Chat
     # Format des IDs :
-    # - Dans l'URL du salon : https://chat.google.com/space/AAAAxxxxxx
-    # - ID à utiliser : space/AAAAxxxxxx
+    # - Dans l'URL du salon : https://chat.google.com/room/AAAAxxxxxx
+    # - ID à utiliser : room/AAAAxxxxxx
     app.config['AVAILABLE_SPACES'] = {
-        "prod": "AAAAOA17Cos",      # Sans le préfixe space/
-        "urgent": "AAAAOA17Cos"     # Sans le préfixe space/
+        "prod": "AAAAOA17Cos",      # ID du salon de production
+        "urgent": "AAAAOA17Cos"     # ID du salon pour les urgences
     }
     
     def get_google_chat_session():
@@ -45,23 +45,27 @@ def create_app():
 
             # Construction de l'URL complète
             base_url = "https://chat.googleapis.com/v1"
-            # Si space_id commence déjà par 'space/', on l'utilise tel quel
-            if not space_id.startswith('space/'):
-                space_id = f"space/{space_id}"
+            # Si space_id commence déjà par 'room/', on l'utilise tel quel
+            if not space_id.startswith('room/'):
+                space_id = f"room/{space_id}"
             
             url = f"{base_url}/{space_id}/messages"
             
-            logger.info(f"Envoi du message vers l'espace: {space_id}")
+            logger.info(f"Envoi du message vers le salon: {space_id}")
             logger.info(f"URL de l'API: {url}")
             
+            # Structure du message selon la documentation Google Chat
             payload = {
-                "text": message,
-                "space": space_id
+                "text": message
             }
             
             logger.info(f"Payload: {json.dumps(payload, indent=2)}")
             
-            response = session.post(url, json=payload)
+            headers = {
+                'Content-Type': 'application/json',
+            }
+            
+            response = session.post(url, json=payload, headers=headers)
             
             logger.info(f"Statut de la réponse: {response.status_code}")
             logger.info(f"Réponse: {response.text}")
