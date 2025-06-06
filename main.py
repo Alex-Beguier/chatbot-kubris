@@ -2,9 +2,24 @@ from flask import Flask, request, jsonify
 import json
 from datetime import datetime
 import logging
+from google.auth import default
+from google.auth.transport.requests import AuthorizedSession
+import os
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
+
+# Liste des salons disponibles
+# Pour trouver l'ID d'un salon :
+# 1. Ouvrez le salon dans Google Chat (https://chat.google.com)
+# 2. L'URL sera comme : https://chat.google.com/room/AAAAxxxxx
+# 3. Prenez la partie AAAAxxxxx et ajoutez "spaces/" devant
+AVAILABLE_SPACES = {
+    # Exemple : si l'URL est https://chat.google.com/room/AAAAaaaaa
+    # alors l'ID est "spaces/AAAAaaaaa"
+    "prod": "spaces/AAAAOA17Cos",  # Salon de production
+    "urgent": "spaces/AAAAOA17Cos"  # Salon pour les urgences
+}
 
 # Templates de communication prédéfinis
 COMMUNICATION_TEMPLATES = {
@@ -46,19 +61,109 @@ def format_message(template, **kwargs):
     default_vars.update(kwargs)
     return template.format(**default_vars)
 
-def create_chat_response(text, thread_key=None):
-    """Crée une réponse formatée pour Google Chat"""
-    response = {
-        "text": text,
-        "actionResponse": {
-            "type": "NEW_MESSAGE"
+def create_chat_response(text, thread_key=None, add_publish_option=True):
+    """Crée une réponse formatée pour Google Chat avec option de republication"""
+    if add_publish_option:
+        response = {
+            "cardsV2": [{
+                "cardId": "message_card",
+                "card": {
+                    "sections": [
+                        {
+                            "header": "Message",
+                            "collapsible": False,
+                            "uncollapsibleWidgetsCount": 1,
+                            "widgets": [
+                                {
+                                    "textParagraph": {
+                                        "text": text
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "header": "Actions",
+                            "collapsible": False,
+                            "widgets": [
+                                {
+                                    "buttonList": {
+                                        "buttons": [
+                                            {
+                                                "text": "Publier en Production",
+                                                "onClick": {
+                                                    "action": {
+                                                        "function": "publish_message",
+                                                        "parameters": [
+                                                            {
+                                                                "key": "target_space",
+                                                                "value": "prod"
+                                                            },
+                                                            {
+                                                                "key": "message",
+                                                                "value": text
+                                                            }
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "text": "Publier en Urgent",
+                                                "onClick": {
+                                                    "action": {
+                                                        "function": "publish_message",
+                                                        "parameters": [
+                                                            {
+                                                                "key": "target_space",
+                                                                "value": "urgent"
+                                                            },
+                                                            {
+                                                                "key": "message",
+                                                                "value": text
+                                                            }
+                                                        ]
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }]
         }
-    }
-    
+    else:
+        response = {"text": text}
+
     if thread_key:
         response["thread"] = {"name": thread_key}
     
     return response
+
+def get_google_chat_session():
+    """Crée une session authentifiée pour l'API Google Chat en utilisant les credentials Cloud Run"""
+    try:
+        credentials, project = default()
+        credentials.refresh_token = None  # Force l'utilisation des credentials de service
+        return AuthorizedSession(credentials)
+    except Exception as e:
+        logging.error(f"Erreur d'authentification Google: {str(e)}")
+        return None
+
+def send_message_to_space(space_id, message):
+    """Envoie un message dans un salon Google Chat spécifique"""
+    session = get_google_chat_session()
+    if not session:
+        raise Exception("Impossible d'établir une session authentifiée avec Google Chat")
+
+    url = f"https://chat.googleapis.com/v1/{space_id}/messages"
+    response = session.post(url, json={"text": message})
+    
+    if response.status_code != 200:
+        raise Exception(f"Erreur lors de l'envoi du message: {response.text}")
+    
+    return response.json()
 
 @app.route('/', methods=['POST'])
 def handle_chat_event():
@@ -158,6 +263,32 @@ def health_check():
         "status": "healthy",
         "timestamp": get_timestamp()
     })
+
+@app.route('/publish', methods=['POST'])
+def publish_message():
+    """Gère la republication d'un message dans un autre salon"""
+    try:
+        data = request.get_json()
+        target_space = data.get('target_space')
+        message = data.get('message')
+        
+        if not target_space or not message:
+            return jsonify({"text": "❌ Erreur: Paramètres manquants"})
+        
+        space_id = AVAILABLE_SPACES.get(target_space)
+        if not space_id:
+            return jsonify({"text": "❌ Erreur: Salon non reconnu"})
+        
+        # Envoi du message dans le salon cible
+        result = send_message_to_space(space_id, message)
+        
+        return jsonify({
+            "text": f"✅ Message publié avec succès dans le salon {target_space}"
+        })
+        
+    except Exception as e:
+        logging.error(f"Erreur lors de la publication: {str(e)}")
+        return jsonify({"text": f"❌ Erreur lors de la publication: {str(e)}"})
 
 if __name__ == '__main__':
     import os
