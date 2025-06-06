@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 import json
 from datetime import datetime
 import logging
@@ -36,204 +36,203 @@ COMMUNICATION_TEMPLATES = {
     }
 }
 
-def create_app():
-    """Fonction de création de l'application Flask"""
-    app = Flask(__name__)
+# Création de l'application Flask
+app = Flask(__name__)
 
-    def get_timestamp():
-        """Retourne un timestamp formaté"""
-        return datetime.now().strftime("%d/%m/%Y à %H:%M")
+def get_timestamp():
+    """Retourne un timestamp formaté"""
+    return datetime.now().strftime("%d/%m/%Y à %H:%M")
 
-    def format_message(template, **kwargs):
-        """Formate un message avec les variables fournies"""
-        default_vars = {
-            'timestamp': get_timestamp(),
-            'start_time': get_timestamp(),
-            'end_time': get_timestamp(),
-            'deployment_date': get_timestamp()
-        }
-        default_vars.update(kwargs)
-        return template.format(**default_vars)
+def format_message(template, **kwargs):
+    """Formate un message avec les variables fournies"""
+    default_vars = {
+        'timestamp': get_timestamp(),
+        'start_time': get_timestamp(),
+        'end_time': get_timestamp(),
+        'deployment_date': get_timestamp()
+    }
+    default_vars.update(kwargs)
+    return template.format(**default_vars)
 
-    def create_chat_response(text, thread_key=None, add_copy_option=True):
-        """Crée une réponse formatée pour Google Chat avec option de copie"""
-        if add_copy_option:
-            response = {
-                "cardsV2": [{
-                    "cardId": "message_card",
-                    "card": {
-                        "sections": [
-                            {
-                                "header": "Message",
-                                "collapsible": False,
-                                "uncollapsibleWidgetsCount": 1,
-                                "widgets": [
-                                    {
-                                        "textParagraph": {
-                                            "text": text
-                                        }
+def create_chat_response(text, thread_key=None, add_copy_option=True):
+    """Crée une réponse formatée pour Google Chat avec option de copie"""
+    if add_copy_option:
+        response = {
+            "cardsV2": [{
+                "cardId": "message_card",
+                "card": {
+                    "sections": [
+                        {
+                            "header": "Message",
+                            "collapsible": False,
+                            "uncollapsibleWidgetsCount": 1,
+                            "widgets": [
+                                {
+                                    "textParagraph": {
+                                        "text": text
                                     }
-                                ]
-                            },
-                            {
-                                "header": "Actions",
-                                "collapsible": False,
-                                "widgets": [
-                                    {
-                                        "buttonList": {
-                                            "buttons": [
-                                                {
-                                                    "text": "📋 Copier le message",
-                                                    "onClick": {
-                                                        "action": {
-                                                            "function": "copy_to_clipboard",
-                                                            "parameters": [
-                                                                {
-                                                                    "key": "text",
-                                                                    "value": text
-                                                                }
-                                                            ]
-                                                        }
+                                }
+                            ]
+                        },
+                        {
+                            "header": "Actions",
+                            "collapsible": False,
+                            "widgets": [
+                                {
+                                    "buttonList": {
+                                        "buttons": [
+                                            {
+                                                "text": "📋 Copier le message",
+                                                "onClick": {
+                                                    "action": {
+                                                        "function": "copy_to_clipboard",
+                                                        "parameters": [
+                                                            {
+                                                                "key": "text",
+                                                                "value": text
+                                                            }
+                                                        ]
                                                     }
                                                 }
-                                            ]
-                                        }
+                                            }
+                                        ]
                                     }
-                                ]
-                            }
-                        ]
-                    }
-                }]
-            }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }]
+        }
+    else:
+        response = {"text": text}
+
+    if thread_key:
+        response["thread"] = {"name": thread_key}
+    
+    return response
+
+def handle_incident_command(message_text, thread_name):
+    """Traite les commandes d'incident"""
+    parts = message_text.split()
+    
+    if len(parts) < 2:
+        help_text = (
+            "📋 **Commandes incident disponibles:**\n\n"
+            "• `/incident detection` - Signaler un incident détecté\n"
+            "• `/incident investigation` - Mise à jour de l'investigation\n"
+            "• `/incident resolution` - Signaler la résolution de l'incident"
+        )
+        return create_chat_response(help_text, thread_name)
+    
+    subcommand = parts[1].lower()
+    templates = COMMUNICATION_TEMPLATES["incident"]["messages"]
+    
+    if subcommand in templates:
+        message = format_message(templates[subcommand])
+        return create_chat_response(message, thread_name)
+    else:
+        return create_chat_response(
+            f"❌ Sous-commande '{subcommand}' non reconnue. "
+            "Utilisez: detection, investigation, ou resolution", 
+            thread_name
+        )
+
+def handle_mep_command(message_text, thread_name):
+    """Traite les commandes de mise en production"""
+    parts = message_text.split()
+    
+    if len(parts) < 2:
+        help_text = (
+            "🚀 **Commandes MEP disponibles:**\n\n"
+            "• `/mep planned` - Annoncer une MEP planifiée\n"
+            "• `/mep started` - Signaler le début du déploiement\n"
+            "• `/mep completed` - Signaler la fin du déploiement"
+        )
+        return create_chat_response(help_text, thread_name)
+    
+    subcommand = parts[1].lower()
+    templates = COMMUNICATION_TEMPLATES["mep"]["messages"]
+    
+    if subcommand in templates:
+        message = format_message(templates[subcommand])
+        return create_chat_response(message, thread_name)
+    else:
+        return create_chat_response(
+            f"❌ Sous-commande '{subcommand}' non reconnue. "
+            "Utilisez: planned, started, ou completed", 
+            thread_name
+        )
+
+@app.route('/', methods=['POST'])
+def handle_chat_event():
+    """Gestionnaire principal pour les événements Google Chat"""
+    try:
+        event = request.get_json()
+        
+        if not event:
+            response = create_chat_response("Erreur: Aucune donnée reçue", None, False)
+            return make_response(jsonify(response), 200)
+        
+        logger.info(f"Événement reçu: {json.dumps(event, indent=2)}")
+        
+        # Extraire le message et les informations de thread
+        message_text = event.get('message', {}).get('text', '').strip()
+        thread_name = event.get('message', {}).get('thread', {}).get('name')
+        
+        # Traiter les commandes slash
+        if message_text.startswith('/incident'):
+            response = handle_incident_command(message_text, thread_name)
+        elif message_text.startswith('/mep'):
+            response = handle_mep_command(message_text, thread_name)
         else:
-            response = {"text": text}
-
-        if thread_key:
-            response["thread"] = {"name": thread_key}
-        
-        return response
-
-    def handle_incident_command(message_text, thread_name):
-        """Traite les commandes d'incident"""
-        parts = message_text.split()
-        
-        if len(parts) < 2:
             help_text = (
-                "📋 **Commandes incident disponibles:**\n\n"
-                "• `/incident detection` - Signaler un incident détecté\n"
-                "• `/incident investigation` - Mise à jour de l'investigation\n"
-                "• `/incident resolution` - Signaler la résolution de l'incident"
-            )
-            return jsonify(create_chat_response(help_text, thread_name))
-        
-        subcommand = parts[1].lower()
-        templates = COMMUNICATION_TEMPLATES["incident"]["messages"]
-        
-        if subcommand in templates:
-            message = format_message(templates[subcommand])
-            return jsonify(create_chat_response(message, thread_name))
-        else:
-            return jsonify(create_chat_response(
-                f"❌ Sous-commande '{subcommand}' non reconnue. "
-                "Utilisez: detection, investigation, ou resolution", 
-                thread_name
-            ))
-
-    def handle_mep_command(message_text, thread_name):
-        """Traite les commandes de mise en production"""
-        parts = message_text.split()
-        
-        if len(parts) < 2:
-            help_text = (
-                "🚀 **Commandes MEP disponibles:**\n\n"
+                "🤖 **Commandes disponibles:**\n\n"
+                "**📋 Incidents:**\n"
+                "• `/incident detection` - Signaler un incident\n"
+                "• `/incident investigation` - Mise à jour investigation\n"
+                "• `/incident resolution` - Signaler la résolution\n\n"
+                "**🚀 Mises en production:**\n"
                 "• `/mep planned` - Annoncer une MEP planifiée\n"
                 "• `/mep started` - Signaler le début du déploiement\n"
-                "• `/mep completed` - Signaler la fin du déploiement"
+                "• `/mep completed` - Signaler la fin du déploiement\n\n"
+                "💡 *Tapez une commande pour obtenir le message correspondant.*"
             )
-            return jsonify(create_chat_response(help_text, thread_name))
+            response = create_chat_response(help_text, thread_name)
         
-        subcommand = parts[1].lower()
-        templates = COMMUNICATION_TEMPLATES["mep"]["messages"]
+        return make_response(jsonify(response), 200)
+            
+    except Exception as e:
+        logger.error(f"Erreur dans handle_chat_event: {str(e)}")
+        error_response = create_chat_response(f"❌ Erreur: {str(e)}", None, False)
+        return make_response(jsonify(error_response), 200)
+
+@app.route('/copy', methods=['POST'])
+def copy_to_clipboard():
+    """Retourne le texte à copier"""
+    try:
+        data = request.get_json()
+        text = data.get('text')
         
-        if subcommand in templates:
-            message = format_message(templates[subcommand])
-            return jsonify(create_chat_response(message, thread_name))
-        else:
-            return jsonify(create_chat_response(
-                f"❌ Sous-commande '{subcommand}' non reconnue. "
-                "Utilisez: planned, started, ou completed", 
-                thread_name
-            ))
+        if not text:
+            response = create_chat_response("❌ Erreur: Texte manquant", None, False)
+            return make_response(jsonify(response), 200)
+        
+        response = create_chat_response("✅ Message copié ! Vous pouvez maintenant le coller dans le salon de votre choix.", None, False)
+        return make_response(jsonify(response), 200)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la copie: {str(e)}")
+        error_response = create_chat_response(f"❌ Erreur: {str(e)}", None, False)
+        return make_response(jsonify(error_response), 200)
 
-    @app.route('/', methods=['POST'])
-    def handle_chat_event():
-        """Gestionnaire principal pour les événements Google Chat"""
-        try:
-            event = request.get_json()
-            
-            if not event:
-                return jsonify({"text": "Erreur: Aucune donnée reçue"})
-            
-            logger.info(f"Événement reçu: {json.dumps(event, indent=2)}")
-            
-            # Extraire le message et les informations de thread
-            message_text = event.get('message', {}).get('text', '').strip()
-            thread_name = event.get('message', {}).get('thread', {}).get('name')
-            
-            # Traiter les commandes slash
-            if message_text.startswith('/incident'):
-                return handle_incident_command(message_text, thread_name)
-            elif message_text.startswith('/mep'):
-                return handle_mep_command(message_text, thread_name)
-            else:
-                help_text = (
-                    "🤖 **Commandes disponibles:**\n\n"
-                    "**📋 Incidents:**\n"
-                    "• `/incident detection` - Signaler un incident\n"
-                    "• `/incident investigation` - Mise à jour investigation\n"
-                    "• `/incident resolution` - Signaler la résolution\n\n"
-                    "**🚀 Mises en production:**\n"
-                    "• `/mep planned` - Annoncer une MEP planifiée\n"
-                    "• `/mep started` - Signaler le début du déploiement\n"
-                    "• `/mep completed` - Signaler la fin du déploiement\n\n"
-                    "💡 *Tapez une commande pour obtenir le message correspondant.*"
-                )
-                return jsonify(create_chat_response(help_text, thread_name))
-                
-        except Exception as e:
-            logger.error(f"Erreur dans handle_chat_event: {str(e)}")
-            return jsonify({"text": f"❌ Erreur: {str(e)}"})
-
-    @app.route('/copy', methods=['POST'])
-    def copy_to_clipboard():
-        """Retourne le texte à copier"""
-        try:
-            data = request.get_json()
-            text = data.get('text')
-            
-            if not text:
-                return jsonify({"text": "❌ Erreur: Texte manquant"})
-            
-            return jsonify({
-                "text": "✅ Message copié ! Vous pouvez maintenant le coller dans le salon de votre choix."
-            })
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la copie: {str(e)}")
-            return jsonify({"text": f"❌ Erreur: {str(e)}"})
-
-    @app.route('/health', methods=['GET'])
-    def health_check():
-        """Endpoint de santé pour Cloud Run"""
-        return jsonify({
-            "status": "healthy",
-            "timestamp": datetime.now().strftime("%d/%m/%Y à %H:%M")
-        })
-
-    return app
-
-# Création de l'instance de l'application
-app = create_app()
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Endpoint de santé pour Cloud Run"""
+    return make_response(jsonify({
+        "status": "healthy",
+        "timestamp": get_timestamp()
+    }), 200)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
