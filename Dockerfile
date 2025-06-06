@@ -1,21 +1,21 @@
-FROM python:3.9-slim
+# Utiliser l'image officielle Python
+FROM python:3.11-slim
 
-# 2. Définir une variable d'environnement pour que Python affiche les logs immédiatement.
-ENV PYTHONUNBUFFERED True
-
-# 3. Définir le répertoire de travail à l'intérieur du conteneur.
+# Définir le répertoire de travail
 WORKDIR /app
 
-# 4. Copier le fichier des dépendances et les installer.
-# Ceci est fait en premier pour profiter du cache Docker si le code change mais pas les dépendances.
-COPY requirements.txt requirements.txt
-RUN pip install -r requirements.txt
+# Copier les fichiers requirements
+COPY requirements.txt .
 
-# 5. Copier le reste du code de l'application dans le répertoire de travail.
+# Installer les dépendances
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copier le code de l'application
 COPY . .
 
-# 6. Définir la commande pour lancer notre application avec le serveur Gunicorn.
-# C'est la commande que Cloud Run exécutera au démarrage du conteneur.
-# On utilise la variable $PORT fournie par Cloud Run au lieu d'un port en dur.
-# La forme "exec" est utilisée pour que Gunicorn soit le processus principal (PID 1).
-CMD exec gunicorn --workers 1 --bind 0.0.0.0:$PORT main:app
+# Exposer le port
+EXPOSE 8080
+
+# Commande pour démarrer l'application
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app
+
