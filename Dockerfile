@@ -19,6 +19,5 @@ EXPOSE 8080
 
 # 7. Définir la commande pour lancer notre application avec le serveur Gunicorn.
 # C'est la commande que Cloud Run exécutera au démarrage du conteneur.
-# Elle lance 4 processus 'workers' qui écoutent sur le port 8080.
-# 'main:app' signifie : dans le fichier 'main.py', trouve l'objet nommé 'app'.
-CMD ["gunicorn", "--workers", "4", "--bind", "0.0.0.0:8080", "main:app"]
+# On utilise maintenant 1 seul worker pour plus de stabilité sur les petites instances.
+CMD ["gunicorn", "--workers", "1", "--bind", "0.0.0.0:8080", "main:app"]
